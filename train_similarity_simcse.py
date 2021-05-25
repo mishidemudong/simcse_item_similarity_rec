@@ -14,6 +14,7 @@ from bert4keras.optimizers import Adam
 from bert4keras.snippets import DataGenerator, sequence_padding
 import pandas as pd
 import jieba
+from jieba.analyse import textrank
 jieba.initialize()
 
 
@@ -33,15 +34,6 @@ task_name = ['ATEC', 'BQ', 'LCQMC'][1]
 dropout_rate = 0.1
 epoch = 10
 maxlen = 64
-
-# 加载数据集
-data_path = '/media/liang/Nas/corpus/文本相似度/chn/senteval_cn/'
-
-datasets = {
-    '%s-%s' % (task_name, f):
-    load_data('%s%s/%s.%s.data' % (data_path, task_name, task_name, f))
-    for f in ['train', 'valid', 'test']
-}
 
 # bert配置
 model_name = {
@@ -81,17 +73,6 @@ else:
         dropout_rate=dropout_rate
     )
 
-# 语料id化
-all_names, all_weights, all_token_ids, all_labels = [], [], [], []
-train_token_ids = []
-for name, data in datasets.items():
-    a_token_ids, b_token_ids, labels = convert_to_ids(data, tokenizer, maxlen)
-    all_names.append(name)
-    all_weights.append(len(data))
-    all_token_ids.append((a_token_ids, b_token_ids))
-    all_labels.append(labels)
-    train_token_ids.extend(a_token_ids)
-    train_token_ids.extend(b_token_ids)
 
 
 
@@ -128,112 +109,89 @@ def simcse_loss(y_true, y_pred):
     loss = K.categorical_crossentropy(y_true, similarities, from_logits=True)
     return K.mean(loss)
 
-# SimCSE训练
-encoder.summary()
-encoder.compile(loss=simcse_loss, optimizer=Adam(1e-5))
-train_generator = data_generator(train_token_ids, 64)
-encoder.fit(
-    train_generator.forfit(), steps_per_epoch=len(train_generator), epochs=epoch
-)
 
-# 语料向量化
-all_vecs = []
-for a_token_ids, b_token_ids in all_token_ids:
-    a_vecs = encoder.predict([a_token_ids,
-                              np.zeros_like(a_token_ids)],
-                             verbose=True)
-    b_vecs = encoder.predict([b_token_ids,
-                              np.zeros_like(b_token_ids)],
-                             verbose=True)
-    all_vecs.append((a_vecs, b_vecs))
-
-# 标准化，相似度，相关系数
-all_corrcoefs = []
-for (a_vecs, b_vecs), labels in zip(all_vecs, all_labels):
-    a_vecs = l2_normalize(a_vecs)
-    b_vecs = l2_normalize(b_vecs)
-    sims = (a_vecs * b_vecs).sum(axis=1)
-    corrcoef = compute_corrcoef(labels, sims)
-    all_corrcoefs.append(corrcoef)
-
-all_corrcoefs.extend([
-    np.average(all_corrcoefs),
-    np.average(all_corrcoefs, weights=all_weights)
-])
-
-for name, corrcoef in zip(all_names + ['avg', 'w-avg'], all_corrcoefs):
-    print('%s: %s' % (name, corrcoef))
-
-
-def convert_to_vecs_one(data, encoder, maxlen=64):
-    """转换数据为vec形式
+class Evaluator(keras.callbacks.Callback):
+    """评估与保存
     """
-    vec_results = {}
-    for id_item, value in data.items():
-        token_ids, seg_ids = tokenizer.encode(value, maxlen=maxlen)
-        vecs = encoder.predict([token_ids,seg_ids])
-        vec_results[id_item] = vecs
-    return vec_results
+    def __init__(self):
+        self.lowest = 1e10
 
-def convert_to_vecs_batch(data, encoder, maxlen=64):
-    """转换文本数据为id形式
-    """
-    resDF = pd.DataFrame()
-    resDF['item_id'] = data['item_id']
-    
-    token_ids= []
-    for index, item in data.iterrows():
-        token_id = tokenizer.encode(d[0], maxlen=maxlen)
-        token_ids.append(token_id)
-    token_ids = sequence_padding(token_ids)
-    vecs = encoder.predict([token_ids,
-                              np.zeros_like(token_ids)],
-                             verbose=True)
-
-    return a_vecs, b_vecs
-
-
-def simcse_cal_func(a_vecs, b_vecs):
-    a_vecs = l2_normalize(a_vecs)
-    b_vecs = l2_normalize(b_vecs)
-    sims = (a_vecs * b_vecs).sum(axis=1)
-    
-    return sims
-
-
-
-def whitening_cal_func(a_vecs, b_vecs, kernel, bias):
-    a_vecs = transform_and_normalize(a_vecs, kernel, bias)
-    b_vecs = transform_and_normalize(b_vecs, kernel, bias)
-    sims = (a_vecs * b_vecs).sum(axis=1)
-    
-    return sims
-    
-    
-def cal_predict(fea_data, encoder):
-    
-    result = {}
-    result['item_id'] = item_id
-    item_otherlist = fea_data.keys()
-    
-    
-    
-    
-    
+    def on_epoch_end(self, epoch, logs=None):
+        # 保存最优
+        if logs['loss'] <= self.lowest:
+            self.lowest = logs['loss']
+            encoder.save_weights('./best_model.weights')
         
-        
-def cal_whitening_predict(fea_data, encoder):
+
+if __name__ == '__main__':
     
     
-    result = {}
-    result['item_id'] = item_id
-    item_otherlist = fea_data.keys()
-    vecs_list = []
-    a_token_ids = tokenizer.encode(fea_data[item_id], maxlen=maxlen)[0]
+    # 加载数据集
+    data_path = '/media/liang/Nas/corpus/文本相似度/chn/senteval_cn/'
     
+    datasets = {
+        '%s-%s' % (task_name, f):
+        load_data('%s%s/%s.%s.data' % (data_path, task_name, task_name, f))
+        for f in ['train', 'valid', 'test']
+    }
     
-    # 计算变换矩阵和偏置项
-    kernel, bias = compute_kernel_bias([v for vecs in all_vecs for v in vecs])
+    # 语料id化
+    all_weights, all_token_ids, all_labels = [], [], []
+    train_token_ids = []
+    for name, data in datasets.items():
+        a_token_ids, b_token_ids, labels = convert_to_ids(data, tokenizer, maxlen)
+        all_weights.append(len(data))
+        all_token_ids.append((a_token_ids, b_token_ids))
+        all_labels.append(labels)
+        train_token_ids.extend(a_token_ids)
+        train_token_ids.extend(b_token_ids)
+    
+    # SimCSE训练
+    evaluator = Evaluator()
+    encoder.summary()
+    encoder.compile(loss=simcse_loss, optimizer=Adam(1e-5))
+    train_generator = data_generator(train_token_ids, 64)
+    
+    # encoder.load_weights('./best_model.weights')
+    encoder.fit(
+        train_generator.forfit(), 
+        # steps_per_epoch=len(train_generator), 
+        steps_per_epoch=1000, 
+        epochs=epoch,
+        callbacks=[evaluator]
+    )
+    
+    encoder.save_weights('./best_model.weights')
+    
+    # 语料向量化
+    all_vecs = []
+    for a_token_ids, b_token_ids in all_token_ids:
+        a_vecs = encoder.predict([a_token_ids,
+                                  np.zeros_like(a_token_ids)],
+                                 verbose=True)
+        b_vecs = encoder.predict([b_token_ids,
+                                  np.zeros_like(b_token_ids)],
+                                 verbose=True)
+        all_vecs.append((a_vecs, b_vecs))
+    
+    # 标准化，相似度，相关系数
+    all_corrcoefs = []
+    for (a_vecs, b_vecs), labels in zip(all_vecs, all_labels):
+        a_vecs = l2_normalize(a_vecs)
+        b_vecs = l2_normalize(b_vecs)
+        sims = (a_vecs * b_vecs).sum(axis=1)
+        corrcoef = compute_corrcoef(labels, sims)
+        all_corrcoefs.append(corrcoef)
+    
+    all_corrcoefs.extend([
+        np.average(all_corrcoefs),
+        np.average(all_corrcoefs, weights=all_weights)
+    ])
+    
+    for name, corrcoef in zip(all_names + ['avg', 'w-avg'], all_corrcoefs):
+        print('%s: %s' % (name, corrcoef))
+
+
     
     
         

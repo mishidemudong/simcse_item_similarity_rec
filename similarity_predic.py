@@ -6,10 +6,11 @@ Created on Tue May 25 15:12:06 2021
 @author: liang
 """
 from utils import *
+from fea_utils import fea_map, fea_enum, fea_numeric, fea_text
 
 config_path = '/media/liang/Nas/PreTrainModel/simbert/chinese_simbert_L-4_H-312_A-12/bert_config.json' 
 dict_path = '/media/liang/Nas/PreTrainModel/simbert/chinese_simbert_L-4_H-312_A-12/vocab.txt' 
-modol_save_path = ''
+modol_save_path = './best_model.weights'
 
 # 建立分词器
 tokenizer = get_tokenizer(dict_path)
@@ -34,8 +35,6 @@ def convert_to_vecs_one(data, encoder, maxlen=64):
         vec_results[id_item] = vecs
     return vec_results
 
-
-from fea_utils import fea_map, fea_enum, fea_numeric, fea_text
 
 def construct_string(data):
     
@@ -83,23 +82,16 @@ def simcse_cal_func(a_vecs, b_vecs):
     return sims
 
 
+
+    
 def whitening_cal_func(a_vecs, b_vecs, kernel, bias):
     a_vecs = transform_and_normalize(a_vecs, kernel, bias)
     b_vecs = transform_and_normalize(b_vecs, kernel, bias)
     sims = (a_vecs * b_vecs).sum(axis=1)
     
     return sims
-    
-    
-def cal_predict(fea_data, encoder):
-    
-    result = {}
-    result['item_id'] = item_id
-    item_otherlist = fea_data.keys()
-    
         
 def cal_whitening_predict(fea_data, encoder):
-    
     
     result = {}
     result['item_id'] = item_id
@@ -109,3 +101,31 @@ def cal_whitening_predict(fea_data, encoder):
     
     # 计算变换矩阵和偏置项
     kernel, bias = compute_kernel_bias([v for vecs in all_vecs for v in vecs])
+    
+    
+def cal_predict(fea_data):
+    
+    result = {}
+    result['item_id'] = item_id
+
+if __name__ == '__main__':
+    
+    
+    pred_df = pd.read_csv("./data/mock_item.csv")
+    
+    
+    
+    vecs_df = convert_to_vecs_batch(pred_df, encoder)
+    
+    
+    
+    
+    
+    
+
+        
+    
+    
+    
+    
+    

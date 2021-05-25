@@ -124,8 +124,6 @@ class Evaluator(keras.callbacks.Callback):
         
 
 if __name__ == '__main__':
-    
-    
     # 加载数据集
     data_path = '/media/liang/Nas/corpus/文本相似度/chn/senteval_cn/'
     

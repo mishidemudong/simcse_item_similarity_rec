@@ -12,11 +12,12 @@ import os
 import tensorflow as tf
 from bert4keras.optimizers import Adam
 from bert4keras.snippets import DataGenerator, sequence_padding
+import pandas as pd
 import jieba
-
 jieba.initialize()
 
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+
+os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
@@ -26,7 +27,7 @@ config.gpu_options.allow_growth = True
 sess = tf.compat.v1.Session(config=config)
 
 # 基本参数
-model_type = ['SimBERT-tiny', 'SimBERT-small'][0]
+model_type=['SimBERT-tiny', 'SimBERT-small'][0]
 pooling = ['first-last-avg', 'last-avg', 'cls', 'pooler'][0]
 task_name = ['ATEC', 'BQ', 'LCQMC'][1]
 dropout_rate = 0.1
@@ -38,7 +39,7 @@ data_path = '/media/liang/Nas/corpus/文本相似度/chn/senteval_cn/'
 
 datasets = {
     '%s-%s' % (task_name, f):
-        load_data('%s%s/%s.%s.data' % (data_path, task_name, task_name, f))
+    load_data('%s%s/%s.%s.data' % (data_path, task_name, task_name, f))
     for f in ['train', 'valid', 'test']
 }
 
@@ -48,9 +49,9 @@ model_name = {
     'SimBERT-small': 'chinese_simbert_L-6_H-384_A-12'
 }[model_type]
 
-config_path = '/media/liang/Nas/PreTrainModel/simbert/chinese_simbert_L-4_H-312_A-12/bert_config.json'
-checkpoint_path = '/media/liang/Nas/PreTrainModel/simbert/chinese_simbert_L-4_H-312_A-12/bert_model.ckpt'
-dict_path = '/media/liang/Nas/PreTrainModel/simbert/chinese_simbert_L-4_H-312_A-12/vocab.txt'
+config_path = '/media/liang/Nas/PreTrainModel/simbert/chinese_simbert_L-4_H-312_A-12/bert_config.json' 
+checkpoint_path = '/media/liang/Nas/PreTrainModel/simbert/chinese_simbert_L-4_H-312_A-12/bert_model.ckpt' 
+dict_path = '/media/liang/Nas/PreTrainModel/simbert/chinese_simbert_L-4_H-312_A-12/vocab.txt' 
 
 # 建立分词器
 tokenizer = get_tokenizer(dict_path)
@@ -93,10 +94,10 @@ for name, data in datasets.items():
     train_token_ids.extend(b_token_ids)
 
 
+
 class data_generator(DataGenerator):
     """训练语料生成器
     """
-
     def __iter__(self, random=False):
         batch_token_ids = []
         for is_end, token_ids in self.sample(random):
@@ -126,7 +127,6 @@ def simcse_loss(y_true, y_pred):
     similarities = similarities * 20
     loss = K.categorical_crossentropy(y_true, similarities, from_logits=True)
     return K.mean(loss)
-
 
 # SimCSE训练
 encoder.summary()
@@ -165,32 +165,80 @@ for name, corrcoef in zip(all_names + ['avg', 'w-avg'], all_corrcoefs):
     print('%s: %s' % (name, corrcoef))
 
 
-def std_simi_cal_func(a_vecs, b_vecs):
+def convert_to_vecs_one(data, encoder, maxlen=64):
+    """转换数据为vec形式
+    """
+    vec_results = {}
+    for id_item, value in data.items():
+        token_ids, seg_ids = tokenizer.encode(value, maxlen=maxlen)
+        vecs = encoder.predict([token_ids,seg_ids])
+        vec_results[id_item] = vecs
+    return vec_results
+
+def convert_to_vecs_batch(data, encoder, maxlen=64):
+    """转换文本数据为id形式
+    """
+    resDF = pd.DataFrame()
+    resDF['item_id'] = data['item_id']
+    
+    token_ids= []
+    for index, item in data.iterrows():
+        token_id = tokenizer.encode(d[0], maxlen=maxlen)
+        token_ids.append(token_id)
+    token_ids = sequence_padding(token_ids)
+    vecs = encoder.predict([token_ids,
+                              np.zeros_like(token_ids)],
+                             verbose=True)
+
+    return a_vecs, b_vecs
+
+
+def simcse_cal_func(a_vecs, b_vecs):
     a_vecs = l2_normalize(a_vecs)
     b_vecs = l2_normalize(b_vecs)
     sims = (a_vecs * b_vecs).sum(axis=1)
-    corrcoef = compute_corrcoef(labels, sims)
+    
+    return sims
 
-    return corrcoef
 
 
-def cal_predict(fea_data, encoder, item_id):
+def whitening_cal_func(a_vecs, b_vecs, kernel, bias):
+    a_vecs = transform_and_normalize(a_vecs, kernel, bias)
+    b_vecs = transform_and_normalize(b_vecs, kernel, bias)
+    sims = (a_vecs * b_vecs).sum(axis=1)
+    
+    return sims
+    
+    
+def cal_predict(fea_data, encoder):
+    
     result = {}
     result['item_id'] = item_id
-    item_other = fea_data.keys()
+    item_otherlist = fea_data.keys()
+    
+    
+    
+    
+    
+        
+        
+def cal_whitening_predict(fea_data, encoder):
+    
+    
+    result = {}
+    result['item_id'] = item_id
+    item_otherlist = fea_data.keys()
     vecs_list = []
     a_token_ids = tokenizer.encode(fea_data[item_id], maxlen=maxlen)[0]
-    a_vecs = encoder.predict([a_token_ids,
-                              np.zeros_like(a_token_ids)],
-                             verbose=True)
-    for item_o in fea_data.keys():
-        b_token_ids = tokenizer.encode(dst_b, maxlen=maxlen)[0]
-        b_vecs = encoder.predict([b_token_ids,
-                                  np.zeros_like(b_token_ids)],
-                                 verbose=True)
+    
+    
+    # 计算变换矩阵和偏置项
+    kernel, bias = compute_kernel_bias([v for vecs in all_vecs for v in vecs])
+    
+    
+        
+        
 
-        vecs_list.append()
-
-
-
-
+    
+    
+    

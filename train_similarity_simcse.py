@@ -41,9 +41,9 @@ model_name = {
     'SimBERT-small': 'chinese_simbert_L-6_H-384_A-12'
 }[model_type]
 
-config_path = '/media/liang/Nas/PreTrainModel/simbert/chinese_simbert_L-4_H-312_A-12/bert_config.json' 
-checkpoint_path = '/media/liang/Nas/PreTrainModel/simbert/chinese_simbert_L-4_H-312_A-12/bert_model.ckpt' 
-dict_path = '/media/liang/Nas/PreTrainModel/simbert/chinese_simbert_L-4_H-312_A-12/vocab.txt' 
+config_path = '/media/liang/Nas/PreTrainModel/retrive_genarate/simbert/chinese_simbert_L-4_H-312_A-12/bert_config.json' 
+checkpoint_path = '/media/liang/Nas/PreTrainModel/retrive_genarate/simbert/chinese_simbert_L-4_H-312_A-12/bert_model.ckpt' 
+dict_path = '/media/liang/Nas/PreTrainModel/retrive_genarate/simbert/chinese_simbert_L-4_H-312_A-12/vocab.txt' 
 
 # 建立分词器
 tokenizer = get_tokenizer(dict_path)

@@ -139,7 +139,7 @@ def cal_predict(fea_data):
 if __name__ == '__main__':
     
     
-    pred_df = pd.read_csv("/media/liang/Project2/推荐系统/git_code/deep_recommendation/data/item_fea.csv").sample(1000)
+    pred_df = pd.read_csv("/media/liang/Project2/推荐系统/git_code/deep_recommendation/data/item_fea.csv").drop_duplicate('物品ID')
     
     resDF = pd.DataFrame()
     resDF['item_id'] = pred_df['物品ID']

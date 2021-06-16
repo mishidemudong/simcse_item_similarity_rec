@@ -15,7 +15,7 @@ from bert4keras.tokenizers import Tokenizer
 from bert4keras.snippets import open
 from bert4keras.snippets import sequence_padding
 from keras.models import Model
-
+from fea_utils import *
 
 def load_data(filename):
     """加载数据（带标签）
@@ -28,6 +28,18 @@ def load_data(filename):
             if len(l) == 3:
                 D.append((l[0], l[1], float(l[2])))
     return D
+
+def construct_string(data):
+    
+    numeric_string = ' '.join(data[fea_numeric].astype('str'))
+    enum_string = ' '.join(data[fea_enum].astype('str'))
+    
+    # mkg_string = ' '.join(data[fea_text].astype('str') )
+    # m_kg = textrank(mkg_string, withWeight=False, topK=20)
+    m_kg = ''
+    keyword_string = ''.join(m_kg)
+    
+    return enum_string, numeric_string, keyword_string
 
 
 def get_tokenizer(dict_path, pre_tokenize=None):

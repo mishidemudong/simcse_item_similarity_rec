@@ -16,10 +16,10 @@ import pandas as pd
 import jieba
 from jieba.analyse import textrank
 jieba.initialize()
-
+import threading
 
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 ###set gpu memory
@@ -75,15 +75,24 @@ else:
 
 
 
-
+print_step = 0
 class data_generator(DataGenerator):
     """训练语料生成器
     """
     def __iter__(self, random=False):
+        global print_step
         batch_token_ids = []
         for is_end, token_ids in self.sample(random):
             batch_token_ids.append(token_ids)
             batch_token_ids.append(token_ids)
+            
+            if print_step % 500 ==0:
+                print()
+                print(print_step)
+                print("token_ids:", tokenizer.ids_to_tokens(token_ids))
+                print("token_decode:", tokenizer.decode(token_ids))
+            print_step += 1
+            
             if len(batch_token_ids) == self.batch_size * 2 or is_end:
                 batch_token_ids = sequence_padding(batch_token_ids)
                 batch_segment_ids = np.zeros_like(batch_token_ids)
@@ -125,69 +134,107 @@ class Evaluator(keras.callbacks.Callback):
 
 if __name__ == '__main__':
     # 加载数据集
-    data_path = '/media/liang/Nas/corpus/文本相似度/chn/senteval_cn/'
+    trained_df = pd.read_csv("/media/liang/Project2/推荐系统/git_code/deep_recommendation/data/item_fea.csv")
     
-    datasets = {
-        '%s-%s' % (task_name, f):
-        load_data('%s%s/%s.%s.data' % (data_path, task_name, task_name, f))
-        for f in ['train', 'valid', 'test']
-    }
-    
+        
     # 语料id化
-    all_weights, all_token_ids, all_labels = [], [], []
-    train_token_ids = []
-    for name, data in datasets.items():
-        a_token_ids, b_token_ids, labels = convert_to_ids(data, tokenizer, maxlen)
-        all_weights.append(len(data))
-        all_token_ids.append((a_token_ids, b_token_ids))
-        all_labels.append(labels)
-        train_token_ids.extend(a_token_ids)
-        train_token_ids.extend(b_token_ids)
+    # train_token_ids= []
+    # for index, item in tqdm(trained_df.iterrows()):
+    #     enum_string, numeric_string, keyword_string = construct_string(item)
+        
+    #     enum_token_id = tokenizer.encode(enum_string, maxlen=maxlen)[0]
+    #     numeric_token_id = tokenizer.encode(numeric_string, maxlen=maxlen)[0][1:]
+    #     keyword_token_id = tokenizer.encode(keyword_string, maxlen=maxlen)[0][1:]
+        
+    #     token_id = enum_token_id + [tokenizer.token_to_id('[SEP]')] + numeric_token_id +[tokenizer.token_to_id('[SEP]')] + keyword_token_id
+        
+    #     train_token_ids.append(token_id)
+    # train_token_ids = sequence_padding(train_token_ids)
+    
+    
+    
+    train_token_ids= []
+    def MainRange(start,stop):     #提供列表index起始位置参数
+        for index, item in tqdm(trained_df[start:stop].iterrows()):
+            enum_string, numeric_string, keyword_string = construct_string(item)
+            
+            enum_token_id = tokenizer.encode(enum_string, maxlen=maxlen)[0]
+            numeric_token_id = tokenizer.encode(numeric_string, maxlen=maxlen)[0][1:]
+            keyword_token_id = tokenizer.encode(keyword_string, maxlen=maxlen)[0][1:]
+            
+            token_id = enum_token_id + [tokenizer.token_to_id('[SEP]')] + numeric_token_id +[tokenizer.token_to_id('[SEP]')] + keyword_token_id
+            
+            train_token_ids.append(token_id)
+    
+    # 多线程部分
+    mid = int(trained_df.shape[0]/4)
+    threads = []
+    t1 = threading.Thread(target=MainRange,args=(0,mid))
+    threads.append(t1)
+    t2 = threading.Thread(target=MainRange,args=(mid,mid*2))
+    threads.append(t2)
+    
+    t3 = threading.Thread(target=MainRange,args=(mid*2,mid*3))
+    threads.append(t3)
+    
+    t4 = threading.Thread(target=MainRange,args=(mid*3,trained_df.shape[0]))
+    threads.append(t4)
+     
+    for t in threads:
+        t.setDaemon(True)
+        t.start()
+    t.join()
+    
+    train_token_ids = sequence_padding(train_token_ids)
     
     # SimCSE训练
-    evaluator = Evaluator()
-    encoder.summary()
-    encoder.compile(loss=simcse_loss, optimizer=Adam(1e-5))
-    train_generator = data_generator(train_token_ids, 64)
+    # evaluator = Evaluator()
+    # encoder.summary()
+    # encoder.compile(loss=simcse_loss, optimizer=Adam(1e-5))
+    # train_generator = data_generator(train_token_ids, 64)
     
     # encoder.load_weights('./best_model.weights')
-    encoder.fit(
-        train_generator.forfit(), 
-        # steps_per_epoch=len(train_generator), 
-        steps_per_epoch=1000, 
-        epochs=epoch,
-        callbacks=[evaluator]
-    )
+    # encoder.fit(
+    #     train_generator.forfit(), 
+    #     # steps_per_epoch=len(train_generator), 
+    #     steps_per_epoch=1000, 
+    #     epochs=epoch,
+    #     callbacks=[evaluator]
+    # )
     
-    encoder.save_weights('./best_model.weights')
+    # encoder.save_weights('./best_model.weights')
     
-    # 语料向量化
-    all_vecs = []
-    for a_token_ids, b_token_ids in all_token_ids:
-        a_vecs = encoder.predict([a_token_ids,
-                                  np.zeros_like(a_token_ids)],
-                                 verbose=True)
-        b_vecs = encoder.predict([b_token_ids,
-                                  np.zeros_like(b_token_ids)],
-                                 verbose=True)
-        all_vecs.append((a_vecs, b_vecs))
+    
+    
+    ####evaluate
+    # # 语料向量化
+    # all_vecs = []
+    # for a_token_ids, b_token_ids in all_token_ids:
+    #     a_vecs = encoder.predict([a_token_ids,
+    #                               np.zeros_like(a_token_ids)],
+    #                              verbose=True)
+    #     b_vecs = encoder.predict([b_token_ids,
+    #                               np.zeros_like(b_token_ids)],
+    #                              verbose=True)
+    #     all_vecs.append((a_vecs, b_vecs))
     
     # 标准化，相似度，相关系数
-    all_corrcoefs = []
-    for (a_vecs, b_vecs), labels in zip(all_vecs, all_labels):
-        a_vecs = l2_normalize(a_vecs)
-        b_vecs = l2_normalize(b_vecs)
-        sims = (a_vecs * b_vecs).sum(axis=1)
-        corrcoef = compute_corrcoef(labels, sims)
-        all_corrcoefs.append(corrcoef)
+    # all_corrcoefs = []
+    # for (a_vecs, b_vecs), labels in zip(all_vecs, all_labels):
+    #     print(a_vecs)
+    #     a_vecs = l2_normalize(a_vecs)
+    #     b_vecs = l2_normalize(b_vecs)
+    #     sims = (a_vecs * b_vecs).sum(axis=1)
+    #     corrcoef = compute_corrcoef(labels, sims)
+    #     all_corrcoefs.append(corrcoef)
     
-    all_corrcoefs.extend([
-        np.average(all_corrcoefs),
-        np.average(all_corrcoefs, weights=all_weights)
-    ])
+    # all_corrcoefs.extend([
+    #     np.average(all_corrcoefs),
+    #     np.average(all_corrcoefs, weights=all_weights)
+    # ])
     
-    for name, corrcoef in zip(all_names + ['avg', 'w-avg'], all_corrcoefs):
-        print('%s: %s' % (name, corrcoef))
+    # for name, corrcoef in zip(all_names + ['avg', 'w-avg'], all_corrcoefs):
+    #     print('%s: %s' % (name, corrcoef))
 
 
     

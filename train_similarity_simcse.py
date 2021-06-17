@@ -17,6 +17,9 @@ import jieba
 from jieba.analyse import textrank
 jieba.initialize()
 import threading
+import multiprocessing
+import copy
+from multiprocessing import Pool
 
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
@@ -134,7 +137,7 @@ class Evaluator(keras.callbacks.Callback):
 
 if __name__ == '__main__':
     # 加载数据集
-    trained_df = pd.read_csv("/media/liang/Project2/推荐系统/git_code/deep_recommendation/data/item_fea.csv")
+    trained_df = pd.read_csv("/media/liang/Project2/推荐系统/git_code/deep_recommendation/data/item_fea.csv").sample(10000)
     
         
     # 语料id化
@@ -154,8 +157,9 @@ if __name__ == '__main__':
     
     
     train_token_ids= []
-    def MainRange(start,stop):     #提供列表index起始位置参数
-        for index, item in tqdm(trained_df[start:stop].iterrows()):
+    def MainRange(trained_df):     #提供列表index起始位置参数
+        part_token_ids= []
+        for index, item in tqdm(trained_df.iterrows()):
             enum_string, numeric_string, keyword_string = construct_string(item)
             
             enum_token_id = tokenizer.encode(enum_string, maxlen=maxlen)[0]
@@ -164,45 +168,41 @@ if __name__ == '__main__':
             
             token_id = enum_token_id + [tokenizer.token_to_id('[SEP]')] + numeric_token_id +[tokenizer.token_to_id('[SEP]')] + keyword_token_id
             
-            train_token_ids.append(token_id)
+            part_token_ids.append(token_id)
+        return part_token_ids
+            
+    df_parts=np.array_split(trained_df,20)
+    print(len(df_parts),type(df_parts[0]))
+
+    with Pool(processes=8) as pool:
+        result_parts = pool.map(MainRange,df_parts)
+        # pool.map(MainRange,df_parts)
+    for item in result_parts:
+        train_token_ids.extend(item)
     
-    # 多线程部分
-    mid = int(trained_df.shape[0]/4)
-    threads = []
-    t1 = threading.Thread(target=MainRange,args=(0,mid))
-    threads.append(t1)
-    t2 = threading.Thread(target=MainRange,args=(mid,mid*2))
-    threads.append(t2)
+
     
-    t3 = threading.Thread(target=MainRange,args=(mid*2,mid*3))
-    threads.append(t3)
+
     
-    t4 = threading.Thread(target=MainRange,args=(mid*3,trained_df.shape[0]))
-    threads.append(t4)
-     
-    for t in threads:
-        t.setDaemon(True)
-        t.start()
-    t.join()
     
     train_token_ids = sequence_padding(train_token_ids)
     
     # SimCSE训练
-    # evaluator = Evaluator()
-    # encoder.summary()
-    # encoder.compile(loss=simcse_loss, optimizer=Adam(1e-5))
-    # train_generator = data_generator(train_token_ids, 64)
+    evaluator = Evaluator()
+    encoder.summary()
+    encoder.compile(loss=simcse_loss, optimizer=Adam(1e-5))
+    train_generator = data_generator(train_token_ids, 64)
     
-    # encoder.load_weights('./best_model.weights')
-    # encoder.fit(
-    #     train_generator.forfit(), 
-    #     # steps_per_epoch=len(train_generator), 
-    #     steps_per_epoch=1000, 
-    #     epochs=epoch,
-    #     callbacks=[evaluator]
-    # )
+    encoder.load_weights('./best_model.weights')
+    encoder.fit(
+        train_generator.forfit(), 
+        # steps_per_epoch=len(train_generator), 
+        steps_per_epoch=1000, 
+        epochs=epoch,
+        callbacks=[evaluator]
+    )
     
-    # encoder.save_weights('./best_model.weights')
+    encoder.save_weights('./best_model.weights')
     
     
     
